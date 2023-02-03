@@ -5,7 +5,7 @@ from clientcomm import run_sync
 
 DEFAULT_STATE_FILE = '.s2rstate.json'
 
-def _recursive_scan(path, result):
+def _recursive_scan(path, result, resolve_symlink):
 	"""
 	'result' is a dict of {relative path name: [target, mtime]}
 		'target' would be a string for symlinks.
@@ -15,7 +15,7 @@ def _recursive_scan(path, result):
 	"""
 	for de in os.scandir(path):
 		include = False
-		is_symlink = de.is_symlink()
+		is_symlink = de.is_symlink() and not resolve_symlink
 		if not is_symlink:
 			if de.is_dir():
 				_recursive_scan(os.path.join(path, de.name), result)
@@ -27,7 +27,7 @@ def _recursive_scan(path, result):
 			include = True
 
 		if include:
-			st = de.stat(follow_symlinks=False)
+			st = de.stat(follow_symlinks=resolve_symlink)
 			mtime = max(st.st_ctime_ns, st.st_mtime_ns)
 			pth = os.path.join(path, de.name)[2:] # remove leading './'
 			# contains either a boolean indicating executable stat for regular file
@@ -39,9 +39,9 @@ def _recursive_scan(path, result):
 				info = bool(st.st_mode & 0o111)
 			result[pth] = (info, mtime)
 
-def recursive_scan(statefile):
+def recursive_scan(statefile, resolve_symlink):
 	ret = {}
-	_recursive_scan(".", ret)
+	_recursive_scan(".", ret, resolve_symlink)
 	# do not include state file for syncing!
 	if statefile in ret:
 		del ret[statefile]
@@ -59,11 +59,17 @@ def _gen_state(args, empty):
 			sw = {
 				"command": [],
 				"remotecwd": None,
+				"resolve_symlink": args.resolve_symlink,
 				"data": None
 			}
 
+		if sw['resolve_symlink'] != args.resolve_symlink:
+			print("Previous state's resolve symlink setting must match.",
+				file=sys.stderr)
+			return 1
+
 		if not empty:
-			sw["data"] = recursive_scan(args.statefile)
+			sw["data"] = recursive_scan(args.statefile, args.resolve_symlink)
 		else:
 			sw["data"] = {}
 
@@ -103,7 +109,7 @@ def _do_sync(args):
 			return 1
 
 	oldstate = sw['data']
-	newstate = recursive_scan(args.statefile)
+	newstate = recursive_scan(args.statefile, sw['resolve_symlink'])
 
 	to_delete = [k for k in oldstate if k not in newstate]
 	# dict of: {filename: data}
@@ -193,6 +199,12 @@ def populate_subparsers(sp):
 		csp.add_argument("--statefile",
 			help=f"s2r client's state file name (default: '{DEFAULT_STATE_FILE}')",
 			default=DEFAULT_STATE_FILE)
+
+	# options specific for genstate
+	for csp in [parser_genstate, parser_genemptystate]:
+		csp.add_argument("--resolve-symlink", "-L",
+			help="Resolve all symlinks and treat all of them as files",
+			action="store_true")
 
 	# sync specific options
 	parser_sync.add_argument("--dryrun", action="store_true",
