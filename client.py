@@ -7,9 +7,11 @@ DEFAULT_STATE_FILE = '.s2rstate.json'
 
 def _recursive_scan(path, result):
 	"""
-	'result' would be a dict of relative path name and [symlink_target, mtime]
-	'symlink_target' would be null for regular files
-	'path' MUST begin with '.'
+	'result' is a dict of {relative path name: [target, mtime]}
+		'target' would be a string for symlinks.
+		On normal file, 'target' is a bool that contains whether the target file
+		is executable or not.
+	The 'path' argument suplied in this function must be '.'.
 	"""
 	for de in os.scandir(path):
 		include = False
@@ -146,7 +148,7 @@ def _do_sync(args):
 		return 0
 
 	# do the real thing
-	if not run_sync(sw, to_delete, to_update):
+	if not run_sync(sw, newstate, to_delete, to_update):
 		# failed
 		print("Sync failed.")
 		return 1

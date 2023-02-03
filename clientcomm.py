@@ -133,7 +133,6 @@ class _Client:
 				return False
 			def _enqueue():
 				# target is a bool: True to make it executable
-				import pdb; pdb.set_trace()
 				self._buffman.append_byte(shared.OpType.WRITE.value)
 				self._buffman.append_byte(1 if target else 0)
 				self._buffman.append_huint(len(fn))
@@ -213,7 +212,12 @@ class _OpQueue:
 				if fd < 0:
 					print(f"Error opening file '{op[0]}' for write: {os.strerror(errnoval)}")
 					return False
-				self._open_fds[fd] = op[0]
+				# some files are open only to update permission: we won't register
+				# their open fd here
+				if op[1]:
+					self._open_fds[fd] = op[0]
+				else:
+					print(f"Permission updated for '{op[0]}'")
 
 		# OK
 		return True
@@ -226,6 +230,9 @@ class _OpQueue:
 				self._client.upload_file(rfd, f)
 
 		for rfd, errnoval in self._client.close_bulk_queue():
+			if rfd not in self._open_fds:
+				# permssion update only. skip.
+				continue
 			fn = self._open_fds[rfd]
 			if errnoval == 0:
 				print(f"File '{fn}' uploaded")
@@ -248,7 +255,7 @@ class _OpQueue:
 		finally:
 			self._enqueued_ops.clear()
 
-	def enqueue(self, fn, update_data):
+	def enqueue(self, fn, update_data, **kwargs):
 		"""
 		args:
 			fn: file name
@@ -256,11 +263,13 @@ class _OpQueue:
 				None for deletion
 				str for symlink (contains target path)
 				bool for file addition (True to upload content, False to just open)
+			executable:
+				Only for normal file. Set to True to make remote file executable.
 		"""
 		if update_data is None:
 			rs = self._client.queue_delete(fn)
 		else:
-			rs = self._client.queue_upload(fn, update_data)
+			rs = self._client.queue_upload(fn, kwargs['executable'])
 
 		if rs:
 			# enqueue successful
@@ -273,7 +282,7 @@ class _OpQueue:
 			return False
 		# at this point, queue processing was successful, retry enqueueing
 		# this queue again
-		return self.enqueue(fn, update_data)
+		return self.enqueue(fn, update_data, **kwargs)
 
 def _gen_oserror(errnoval):
 	return OSError(errnoval, os.strerror(errnoval))
@@ -285,7 +294,7 @@ def _convert_bulkopen_result(rettype, bio):
 		return struct.unpack("=IH", bio.read(6))
 	raise RuntimeError("Unknown rettype")
 
-def run_sync(sw, to_delete, to_update):
+def run_sync(sw, newstate, to_delete, to_update):
 	if not to_delete and not to_update:
 		print("Nothing to be done!")
 		return True
@@ -298,7 +307,7 @@ def run_sync(sw, to_delete, to_update):
 		if not opqueue.enqueue(k, None):
 			return False
 	for k, v in to_update.items():
-		if not opqueue.enqueue(k, v):
+		if not opqueue.enqueue(k, v, executable=newstate[k][0]):
 			return False
 	# the remaining operations
 	return opqueue.do_process_queue()
