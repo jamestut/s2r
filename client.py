@@ -18,7 +18,7 @@ def _recursive_scan(path, result, resolve_symlink):
 		is_symlink = de.is_symlink() and not resolve_symlink
 		if not is_symlink:
 			if de.is_dir():
-				_recursive_scan(os.path.join(path, de.name), result)
+				_recursive_scan(os.path.join(path, de.name), result, resolve_symlink)
 			elif de.is_file():
 				include = True
 			# ignore non-file
@@ -86,6 +86,7 @@ def _gen_state(args, empty):
 	return 0
 
 def _do_sync(args):
+	print("Loading state file ...")
 	try:
 		with open(args.statefile, 'r') as f:
 			sw = json.load(f)
@@ -109,6 +110,7 @@ def _do_sync(args):
 			return 1
 
 	oldstate = sw['data']
+	print("Scanning ...")
 	newstate = recursive_scan(args.statefile, sw['resolve_symlink'])
 
 	to_delete = [k for k in oldstate if k not in newstate]
@@ -154,6 +156,7 @@ def _do_sync(args):
 		return 0
 
 	# do the real thing
+	print("Syncing ...")
 	if not run_sync(sw, newstate, to_delete, to_update):
 		# failed
 		print("Sync failed.")
@@ -167,6 +170,7 @@ def _do_sync(args):
 	return 0
 
 def _print_dryrun(to_delete, to_update):
+	print()
 	if not to_delete:
 		print("(No remote files will be deleted)")
 	else:
