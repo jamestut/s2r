@@ -132,6 +132,9 @@ class _Server:
 				int32_t fd
 				uint16_t errno
 		"""
+		if not self._bulkopactive:
+			raise RuntimeError("No previous bulk operation have been done!")
+		self._bulkopactive = False
 		self._replybuffman.begin_msg(shared.MsgType.BULKOP_CLOSE_RESULTS)
 		for fd, v in self._bulkofd.items():
 			fh, _, errno = v

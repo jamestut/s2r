@@ -35,7 +35,10 @@ class _Client:
 		self._fout.write(self._buffman.getbuffer())
 
 	def _recv_msg(self):
-		cmd = shared.MsgType(shared.read_all(self._fin, 1)[0])
+		cmd = shared.read_all(self._fin, 1)
+		if not cmd:
+			raise RuntimeError("Premature connection end")
+		cmd = shared.MsgType(cmd[0])
 		arglen = struct.unpack("=I", shared.read_all(self._fin, 4))[0]
 		if arglen > len(self._buff):
 			raise RuntimeError("Server response exceeded buffer size")
@@ -291,7 +294,7 @@ def _convert_bulkopen_result(rettype, bio):
 	if rettype == BulkOpRetType.GENERIC:
 		return struct.unpack("=H", bio.read(2))
 	if rettype == BulkOpRetType.OPENFD:
-		return struct.unpack("=IH", bio.read(6))
+		return struct.unpack("=iH", bio.read(6))
 	raise RuntimeError("Unknown rettype")
 
 def run_sync(sw, newstate, to_delete, to_update):
